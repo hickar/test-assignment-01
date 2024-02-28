@@ -1,0 +1,163 @@
+version: "3.8"
+
+services:
+  order-service:
+    container_name: order_service
+    build:
+      context: ./order_service/
+      dockerfile: ./Dockerfile
+    ports:
+      - "${ORDER_SERVICE_PORT}:8000"
+    depends_on:
+      order-db:
+        condition: service_healthy
+    networks:
+      - internal_network
+
+  account-service:
+    container_name: account_service
+    build:
+      context: ./account_service/
+      dockerfile: ./Dockerfile
+    ports:
+      - "${ACCOUNT_SERVICE_PORT}:8000"
+    depends_on:
+      account-db:
+        condition: service_healthy
+    networks:
+      - internal_network
+
+  order-db:
+    image: postgres:16
+    container_name: order_db 
+    ports:
+      - "${ORDER_DATABASE_PORT}:5432"
+    restart: always
+    command: >
+      -c wal_level=logical
+      -c max_wal_senders=1
+      -c max_replication_slots=1
+    environment:
+      - POSTGRES_USER=${ORDER_DATABASE_USER}
+      - POSTGRES_PASSWORD=${ORDER_DATABASE_PASSWORD}
+      - POSTGRES_DB=${ORDER_DATABASE_NAME}
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "${ORDER_DATABASE_NAME}"]
+      interval: 10s
+      timeout: 60s
+      retries: 5
+      start_period: 60s
+    networks:
+      - internal_network 
+
+  account-db:
+    image: postgres:16
+    container_name: account_db 
+    ports:
+      - "${ACCOUNT_DATABASE_PORT}:5432"
+    restart: always
+    environment:
+      - POSTGRES_USER=${ACCOUNT_DATABASE_USER}
+      - POSTGRES_PASSWORD=${ACCOUNT_DATABASE_PASSWORD}
+      - POSTGRES_DB=${ACCOUNT_DATABASE_NAME}
+    volumes:
+      - account-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "${ACCOUNT_DATABASE_NAME}"]
+      interval: 10s
+      timeout: 60s
+      retries: 5
+      start_period: 60s
+    networks:
+      - internal_network 
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kafka
+    environment:
+      KAFKA_ADVERTISED_LISTENERS: "PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:15456"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+      KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_JMX_PORT: 15456
+      KAFKA_JMX_HOSTNAME: "${DOCKER_HOST_IP:-127.0.0.1}"
+      KAFKA_AUTHORIZER_CLASS_NAME: "kafka.security.authorizer.AclAuthorizer"
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+    ports:
+      - "15456:15456"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: nc -z localhost 15456 || exit -1
+      start_period: 30s
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    networks:
+      - internal_network
+
+  connect:
+    image: confluentinc/cp-server-connect:7.6.0
+    container_name: kafka_connect
+    ports:
+      - "8083:8083"
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "kafka:29092"
+      CONNECT_GROUP_ID: "debezium-example"
+      CONNECT_REST_ADVERTISED_HOST_NAME: "connect"
+      CONNECT_CONFIG_STORAGE_TOPIC: "connect-demo-configs"
+      CONNECT_OFFSET_STORAGE_TOPIC: "connect-demo-offsets"
+      CONNECT_STATUS_STORAGE_TOPIC: "connect-demo-statuses"
+      CONNECT_REPLICATION_FACTOR: 1
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
+      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components/,/connectors/"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      order-db:
+        condition: service_healthy
+    volumes:
+      - account-db-data:/opt/docker/db/data
+      - ${PWD}/stack-configs:/opt/docker/stack-configs
+    command:
+      - bash
+      - -c
+      - |
+        confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.2.1
+        /etc/confluent/docker/run
+    networks:
+      - internal_network
+
+  zookeeper:
+    container_name: zookeeper
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "22181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - internal_network
+
+networks:
+  internal_network:
+
+volumes:
+  order-db-data:
+  account-db-data:
+  kafka-data:
+  zookeeper-data:

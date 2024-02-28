@@ -1,0 +1,37 @@
+// protoc --go_out=plugins=grpc:. *.proto
+
+syntax = "proto3";
+
+package order;
+option go_package = "./order/proto";
+
+service Order {
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse) {}
+  rpc GetOrder(GetOrderRequest) returns (GetOrderResponse) {}
+}
+
+message CreateOrderRequest {
+  uint64 user_id = 1;
+  double amount = 2;
+}
+
+message CreateOrderResponse {
+  string transaction_id = 1;
+}
+
+message GetOrderRequest {
+  string transaction_id = 1;
+}
+
+message GetOrderResponse {
+  uint64 id = 1;
+  uint64 client_id = 2;
+  uint64 amount = 3;
+  Status status = 4;
+}
+
+enum Status {
+  CREATED = 0;
+  PAID = 1;
+  CANCELLED = 2;
+}

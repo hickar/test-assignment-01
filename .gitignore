@@ -1,0 +1,10 @@
+.DS_Store
+.idea
+.vscode
+.code
+
+*.env*
+!*.env.example
+
+.*tmp
+tmp/*
