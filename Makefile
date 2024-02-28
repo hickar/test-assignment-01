@@ -21,10 +21,9 @@ lint-check: ## Launches golangci-lint check
 
 .PHONY: proto-gen
 proto-gen: ## Generate service definition from .proto file
-	protoc \ 
-	--go_out="." --go_opt="paths=source_relative" \
-	--go-grpc_out="." --go-grpc_opt="paths=source_relative" \
-	./order_service/proto/order.proto
+	protoc --go_out="." --go_opt="paths=source_relative" \
+		--go-grpc_out="." --go-grpc_opt="paths=source_relative" \
+		./order_service/proto/order.proto
 
 .PHONY: help
 help: ## Display help information

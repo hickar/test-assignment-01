@@ -11,22 +11,22 @@ service Order {
 }
 
 message CreateOrderRequest {
-  uint64 user_id = 1;
-  double amount = 2;
+  int64 user_id = 1;
+  int64 amount = 2;
 }
 
 message CreateOrderResponse {
-  string transaction_id = 1;
+  int64 transaction_id = 1;
 }
 
 message GetOrderRequest {
-  string transaction_id = 1;
+  int64 transaction_id = 1;
 }
 
 message GetOrderResponse {
-  uint64 id = 1;
-  uint64 client_id = 2;
-  uint64 amount = 3;
+  int64 id = 1;
+  int64 client_id = 2;
+  int64 amount = 3;
   Status status = 4;
 }
 
