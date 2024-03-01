@@ -4,8 +4,16 @@ services:
   order-service:
     container_name: order_service
     build:
-      context: ./order_service/
-      dockerfile: ./Dockerfile
+      context: .
+      dockerfile: ./order_service/Dockerfile
+    volumes:
+      - ./order_service/config.example.yaml:/app/config.yaml
+    environment:
+      - DATABASE_HOST=order-db
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=${ACCOUNT_DATABASE_NAME}
+      - DATABASE_USER=${ACCOUNT_DATABASE_USER}
+      - DATABASE_PASSWORD=${ACCOUNT_DATABASE_PASSWORD}
     ports:
       - "${ORDER_SERVICE_PORT}:8000"
     depends_on:
@@ -17,8 +25,16 @@ services:
   account-service:
     container_name: account_service
     build:
-      context: ./account_service/
-      dockerfile: ./Dockerfile
+      context: .
+      dockerfile: ./account_service/Dockerfile
+    volumes:
+      - ./order_service/config.example.yaml:/app/config.yaml
+    environment:
+      - DATABASE_HOST=account-db
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=${ACCOUNT_DATABASE_NAME}
+      - DATABASE_USER=${ACCOUNT_DATABASE_USER}
+      - DATABASE_PASSWORD=${ACCOUNT_DATABASE_PASSWORD}
     ports:
       - "${ACCOUNT_SERVICE_PORT}:8000"
     depends_on:
@@ -36,13 +52,14 @@ services:
     command: >
       -c wal_level=logical
       -c max_wal_senders=1
-      -c max_replication_slots=1
+      -c max_replication_slots=3
     environment:
       - POSTGRES_USER=${ORDER_DATABASE_USER}
       - POSTGRES_PASSWORD=${ORDER_DATABASE_PASSWORD}
       - POSTGRES_DB=${ORDER_DATABASE_NAME}
     volumes:
       - order-db-data:/var/lib/postgresql/data
+      - ./order_service/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready", "-d", "${ORDER_DATABASE_NAME}"]
       interval: 10s
@@ -58,6 +75,10 @@ services:
     ports:
       - "${ACCOUNT_DATABASE_PORT}:5432"
     restart: always
+    command: >
+      -c wal_level=logical
+      -c max_wal_senders=1
+      -c max_replication_slots=3
     environment:
       - POSTGRES_USER=${ACCOUNT_DATABASE_USER}
       - POSTGRES_PASSWORD=${ACCOUNT_DATABASE_PASSWORD}
@@ -111,7 +132,7 @@ services:
       - "8083:8083"
     environment:
       CONNECT_BOOTSTRAP_SERVERS: "kafka:29092"
-      CONNECT_GROUP_ID: "debezium-example"
+      CONNECT_GROUP_ID: "compose-group-id"
       CONNECT_REST_ADVERTISED_HOST_NAME: "connect"
       CONNECT_CONFIG_STORAGE_TOPIC: "connect-demo-configs"
       CONNECT_OFFSET_STORAGE_TOPIC: "connect-demo-offsets"
@@ -123,6 +144,16 @@ services:
       CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
       CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
       CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components/,/connectors/"
+      ORDER_DATABASE_HOST: order-db # Конфигурация коннекторов БД
+      ORDER_DATABASE_PORT: 5432 
+      ORDER_DATABASE_NAME: ${ORDER_DATABASE_NAME}
+      ORDER_DATABASE_USER: ${ORDER_DATABASE_USER}
+      ORDER_DATABASE_PASSWORD: ${ORDER_DATABASE_PASSWORD}
+      ACCOUNT_DATABASE_HOST: account-db
+      ACCOUNT_DATABASE_PORT: 5432 
+      ACCOUNT_DATABASE_NAME: ${ACCOUNT_DATABASE_NAME}
+      ACCOUNT_DATABASE_USER: ${ACCOUNT_DATABASE_USER}
+      ACCOUNT_DATABASE_PASSWORD: ${ACCOUNT_DATABASE_PASSWORD}
     depends_on:
       kafka:
         condition: service_healthy
@@ -130,13 +161,15 @@ services:
         condition: service_healthy
     volumes:
       - account-db-data:/opt/docker/db/data
-      - ${PWD}/stack-configs:/opt/docker/stack-configs
+      - ./debezium:/scripts
     command:
       - bash
       - -c
       - |
         confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.2.1
-        /etc/confluent/docker/run
+        /etc/confluent/docker/run &
+        /scripts/load_connector_config.sh
+        sleep infinity
     networks:
       - internal_network
 

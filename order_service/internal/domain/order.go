@@ -8,7 +8,7 @@ import (
 type Service interface {
 	CreateOrder(context.Context, Order) (int64, error)
 	GetOrderByID(context.Context, int64) (Order, error)
-	UpdateOrder(context.Context, Order) error
+	UpdateOrder(context.Context, OrderEvent) error
 }
 
 type Order struct {
@@ -19,20 +19,22 @@ type Order struct {
 }
 
 const (
-	OrderStatusCreated   = "created"
-	OrderStatusPaid      = "paid"
-	OrderStatusCancelled = "cancelled"
+	OrderStatusCreated  = "CREATED"
+	OrderStatusPaid     = "PAID"
+	OrderStatusCanceled = "CANCELED"
 )
 
 type OrderEvent struct {
-	ID      int64
-	OrderID int64
+	ID          int64
+	OrderID     int64
+	Status      string
+	AmountCents int64
 }
 
 type OrderRepository interface {
 	GetOrderByID(context.Context, int64) (Order, error)
 	CreateOrder(context.Context, Order) (Order, error)
-	UpdateOrder(context.Context, Order) error
+	UpdateOrderStatusByID(context.Context, int64, string) error
 }
 
 type OrderService struct {
@@ -47,8 +49,8 @@ func (s *OrderService) CreateOrder(ctx context.Context, order Order) (int64, err
 	var orderID int64
 	var err error
 
-	if order.AmountCents < 0 {
-		return orderID, nil
+	if !isValidOrderPayload(order) {
+		return orderID, ErrInvalidData
 	}
 
 	order, err = s.repo.CreateOrder(ctx, order)
@@ -69,7 +71,23 @@ func (s *OrderService) GetOrderByID(ctx context.Context, orderID int64) (Order, 
 	return order, nil
 }
 
-func (s *OrderService) UpdateOrder(ctx context.Context, order Order) error {
-	// TODO: implement
-	return nil
+func (s *OrderService) UpdateOrder(ctx context.Context, event OrderEvent) error {
+	if !isValidOrderEventPayload(event) {
+		return ErrInvalidData
+	}
+
+	err := s.repo.UpdateOrderStatusByID(ctx, event.OrderID, event.Status)
+	return err
+}
+
+func isValidOrderPayload(order Order) bool {
+	return order.AmountCents > 0
+}
+
+func isValidOrderEventPayload(event OrderEvent) bool {
+	if event.Status != OrderStatusPaid && event.Status != OrderStatusCanceled {
+		return false
+	}
+
+	return true
 }

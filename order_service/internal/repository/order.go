@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/hickar/crtex_test_assignment/order_service/internal/domain"
 )
@@ -16,9 +17,15 @@ func NewOrderRepository(conn *sql.DB) *OrderRepository {
 }
 
 func (r *OrderRepository) CreateOrder(ctx context.Context, order domain.Order) (domain.Order, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return order, err
+	}
+	defer tx.Rollback()
+
 	query := `INSERT INTO orders (amount_cents, user_id, status) VALUES ($1, $2, $3) RETURNING id;`
 
-	err := r.db.QueryRowContext(
+	err = tx.QueryRowContext(
 		ctx,
 		query,
 		order.AmountCents,
@@ -26,6 +33,22 @@ func (r *OrderRepository) CreateOrder(ctx context.Context, order domain.Order) (
 		domain.OrderStatusCreated,
 	).Scan(&order.ID)
 	if err != nil {
+		return order, err
+	}
+
+	query = `INSERT INTO order_create_events (order_id, amount_cents, user_id) VALUES ($1, $2, $3);`
+	_, err = tx.ExecContext(
+		ctx,
+		query,
+		order.ID,
+		order.AmountCents,
+		order.UserID,
+	)
+	if err != nil {
+		return order, err
+	}
+
+	if err = tx.Commit(); err != nil {
 		return order, err
 	}
 
@@ -46,13 +69,16 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, orderID int64) (doma
 		&order.AmountCents,
 		&order.Status,
 	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return order, domain.ErrNotFound
+	}
 
 	return order, err
 }
 
-func (r *OrderRepository) UpdateOrder(ctx context.Context, order domain.Order) error {
+func (r *OrderRepository) UpdateOrderStatusByID(ctx context.Context, orderID int64, orderStatus string) error {
 	query := `UPDATE orders SET status = $2 WHERE id = $1;`
 
-	_, err := r.db.ExecContext(ctx, query, order.ID, order.Status)
+	_, err := r.db.ExecContext(ctx, query, orderID, orderStatus)
 	return err
 }

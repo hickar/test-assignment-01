@@ -1,0 +1,17 @@
+grpc:
+  port: 8001
+  max_idle_connection_lifetime: 60s
+  max_connection_age: 60s
+  timeout: 60s
+
+kafka:
+  broker_urls:
+    - kafka:29092
+  topic: debezium.public.order-db-events
+  group_id: compose-group-id 
+  heartbeat_interval: 5s
+  handler_timeout: 30s
+  worker_count: 8
+
+logger:
+  level: DEBUG

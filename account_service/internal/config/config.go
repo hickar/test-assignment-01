@@ -8,10 +8,10 @@ import (
 )
 
 type Configuration struct {
-	GRPCServer    GRPCConfiguration          `yaml:"grpc"`
-	DB            DatabaseConfiguration      `yaml:"db"`
-	Logger        LoggerConfiguration        `yaml:"logger"`
-	KafkaConsumer KafkaConsumerConfiguration `yaml:"kafka_consumer"`
+	GRPCServer GRPCConfiguration          `yaml:"grpc"`
+	DB         DatabaseConfiguration      `yaml:"db"`
+	Logger     LoggerConfiguration        `yaml:"logger"`
+	Kafka      KafkaConsumerConfiguration `yaml:"kafka_consumer"`
 }
 
 type GRPCConfiguration struct {

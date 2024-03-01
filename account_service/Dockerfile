@@ -2,18 +2,19 @@ FROM golang:1.22-alpine as build
 
 WORKDIR /app
 
-ADD go.mod .
-ADD go.sum .
+COPY go.mod .
+COPY go.sum .
+
 RUN go mod download
 
 COPY . .
-RUN go build -ldflags="-s -w" -o ./accountservice ./cmd/main/
+RUN go build -ldflags="-s -w" -o ./account-service ./account_service/cmd/main/
 
 
 FROM alpine 
 
 WORKDIR /app
 
-COPY --from=build /app/accountservice /app/accountservice
+COPY --from=build /app/account-service .
 
-CMD ["/app/accountservice"]
+ENTRYPOINT ["/app/account-service"]

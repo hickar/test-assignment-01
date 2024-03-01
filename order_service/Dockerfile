@@ -2,18 +2,19 @@ FROM golang:1.22-alpine as build
 
 WORKDIR /app
 
-ADD go.mod .
-ADD go.sum .
+COPY go.mod .
+COPY go.sum .
+
 RUN go mod download
 
 COPY . .
-RUN go build -ldflags="-s -w" -o ./orderservice ./cmd/main/
+RUN go build -ldflags="-s -w" -o ./order-service ./order_service/cmd/main/
 
 
 FROM alpine 
 
 WORKDIR /app
 
-COPY --from=build /app/orderservice /app/orderservice
+COPY --from=build /app/order-service .
 
-CMD ["/app/orderservice"]
+ENTRYPOINT ["/app/order-service"]
