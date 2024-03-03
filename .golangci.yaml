@@ -3,11 +3,12 @@ run:
   modules-download-mode: readonly
   issues-exit-code: 1
   tests: true
-  go: "1.20"
+  go: "1.22"
   skip-dirs:
-    - order_service/proto
+    - order/proto
   skip-files:
     - ".*\\.pb\\.go"
+    - ".*test\\.go"
 
 linters:
   disable-all: true
@@ -22,7 +23,6 @@ linters:
     - errname
     - errorlint
     - exportloopref
-    # - gocritic
     - godot
     - gofmt
     - gofumpt
@@ -48,10 +48,6 @@ linters:
     - usestdlibvars
 
 linters-settings:
-  gocritic:
-    disabled-checks:
-      - commentFormatting
-
   revive:
     rules:
       - name: package-comments

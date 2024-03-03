@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-type ConsumerConfiguration struct {
+type Configuration struct {
 	BrokerURLs        []string
 	GroupID           string
 	GroupTopics       []string
@@ -21,14 +22,13 @@ type ConsumerConfiguration struct {
 	HandlerTimeout    time.Duration
 }
 
-type RouteHandler func(context.Context, *kafka.Message)
+type RouteHandler func(context.Context, *kafka.Message) error
 
 type RouteMiddleware func(RouteHandler) RouteHandler
 
 type Consumer struct {
 	r      *kafka.Reader
 	router MessageRouter
-	logger *slog.Logger
 
 	workerCount    int
 	handlerTimeout time.Duration
@@ -40,8 +40,7 @@ type MessageRouter interface {
 }
 
 func NewConsumer(
-	ctx context.Context,
-	cfg ConsumerConfiguration,
+	cfg Configuration,
 	router MessageRouter,
 ) (*Consumer, error) {
 	r := kafka.NewReader(kafka.ReaderConfig{
@@ -69,7 +68,6 @@ func NewConsumer(
 	return &Consumer{
 		r:              r,
 		router:         router,
-		logger:         cfg.Logger,
 		workerCount:    cfg.WorkerCount,
 		handlerTimeout: cfg.HandlerTimeout,
 	}, nil
@@ -90,9 +88,9 @@ func (c *Consumer) Run(ctx context.Context) error {
 			}
 
 			select {
-			case messageCh <- &msg:
 			case <-ctx.Done():
 				return
+			case messageCh <- &msg:
 			}
 		}
 	}()
@@ -101,12 +99,14 @@ func (c *Consumer) Run(ctx context.Context) error {
 		go c.worker(ctx, messageCh)
 	}
 
+	var closeErr error
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
-	case err := <-errCh:
-		return err
+		closeErr = ctx.Err()
+	case closeErr = <-errCh:
 	}
+
+	return errors.Join(closeErr, c.r.Close())
 }
 
 func (c *Consumer) worker(ctx context.Context, messageCh <-chan *kafka.Message) {

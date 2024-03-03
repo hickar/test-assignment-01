@@ -6,17 +6,17 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-type ConsumerTopicRouter struct {
+type TopicRouter struct {
 	routes map[string]RouteHandler
 }
 
-func NewConsumerTopicRouter() *ConsumerTopicRouter {
-	return &ConsumerTopicRouter{
+func NewTopicRouter() *TopicRouter {
+	return &TopicRouter{
 		routes: make(map[string]RouteHandler),
 	}
 }
 
-func (r *ConsumerTopicRouter) Handle(topic string, handler RouteHandler, middlewareFns ...RouteMiddleware) {
+func (r *TopicRouter) Handle(topic string, handler RouteHandler, middlewareFns ...RouteMiddleware) {
 	h := handler
 
 	for _, middlewareFn := range middlewareFns {
@@ -26,11 +26,11 @@ func (r *ConsumerTopicRouter) Handle(topic string, handler RouteHandler, middlew
 	r.routes[topic] = h
 }
 
-func (r *ConsumerTopicRouter) Route(ctx context.Context, message *kafka.Message) {
+func (r *TopicRouter) Route(ctx context.Context, message *kafka.Message) {
 	handler, ok := r.routes[message.Topic]
 	if !ok {
 		return
 	}
 
-	handler(ctx, message)
+	_ = handler(ctx, message)
 }

@@ -2,11 +2,10 @@ package postgres
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
-	_ "github.com/jackc/pgx/stdlib"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Configuration struct {
@@ -17,42 +16,56 @@ type Configuration struct {
 	Name     string
 
 	MaxOpenConns        int
-	MaxConnLifetime     int
-	MaxIdleConns        int
-	MaxIdleConnLifetime int
+	MaxConnLifetime     time.Duration
+	MaxIdleConnLifetime time.Duration
+
+	ConnectionRetries       int
+	ConnectionRetryInterval time.Duration
 }
 
-func New(ctx context.Context, cfg Configuration) (*sql.DB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s dbname=%s sslmode=disable password=%s",
+func New(ctx context.Context, cfg Configuration) (*pgxpool.Pool, error) {
+	connStr := fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s",
+		cfg.User,
+		cfg.Password,
 		cfg.Host,
 		cfg.Port,
-		cfg.User,
 		cfg.Name,
-		cfg.Password,
 	)
-
-	db, err := sql.Open("pgx", dsn)
+	connCfg, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		return nil, fmt.Errorf("database connection failed: %w", err)
+		return nil, err
 	}
 
 	if cfg.MaxOpenConns > 0 {
-		db.SetMaxOpenConns(cfg.MaxOpenConns)
+		connCfg.MaxConns = int32(cfg.MaxOpenConns)
 	}
 	if cfg.MaxConnLifetime > 0 {
-		db.SetConnMaxLifetime(time.Duration(cfg.MaxConnLifetime) * time.Second)
-	}
-	if cfg.MaxIdleConns > 0 {
-		db.SetMaxIdleConns(cfg.MaxIdleConns)
+		connCfg.MaxConnLifetime = cfg.MaxConnLifetime
 	}
 	if cfg.MaxIdleConnLifetime > 0 {
-		db.SetConnMaxIdleTime(time.Duration(cfg.MaxIdleConnLifetime) * time.Second)
+		connCfg.MaxConnIdleTime = cfg.MaxIdleConnLifetime
 	}
 
-	if err = db.PingContext(ctx); err != nil {
-		return nil, fmt.Errorf("unable to ping db: %w", err)
+	dbpool, err := pgxpool.NewWithConfig(ctx, connCfg)
+	if err != nil {
+		return nil, err
 	}
 
-	return db, nil
+	if cfg.ConnectionRetries <= 0 {
+		cfg.ConnectionRetries = 3
+	}
+	if cfg.ConnectionRetryInterval <= 0 {
+		cfg.ConnectionRetryInterval = time.Second * 3
+	}
+
+	for r := 0; r < cfg.ConnectionRetries; r++ {
+		if err = dbpool.Ping(ctx); err == nil {
+			break
+		}
+
+		time.Sleep(cfg.ConnectionRetryInterval)
+	}
+
+	return dbpool, fmt.Errorf("failed to ping database after %d retries: %w", cfg.ConnectionRetries, err)
 }

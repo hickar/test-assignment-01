@@ -16,7 +16,7 @@ func LoggerInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 		logger.Info(
 			"request processed",
 			slog.String("method", info.FullMethod),
-			slog.Int64("response time (ms)", time.Since(start).Milliseconds()),
+			slog.Int64("response_time_ms", time.Since(start).Milliseconds()),
 			slog.Any("error", err),
 		)
 
