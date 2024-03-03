@@ -1,0 +1,182 @@
+version: "3.8"
+
+services:
+  test-order-service:
+    container_name: test-order-service
+    build:
+      context: ../../
+      dockerfile: ./order/Dockerfile
+    volumes:
+      - ./config.order.yaml:/app/config.yaml
+    environment:
+      - DATABASE_HOST=test-order-db
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=orders
+      - DATABASE_USER=order_db_user
+      - DATABASE_PASSWORD=order_db_password
+    ports:
+      - "8880:8000"
+    depends_on:
+      test-order-db:
+        condition: service_healthy
+    networks:
+      - internal_test_network
+
+  test-account-service:
+    container_name: test-account-service
+    build:
+      context: ../../
+      dockerfile: account/Dockerfile
+    volumes:
+      - ./config.account.yaml:/app/config.yaml
+    environment:
+      - DATABASE_HOST=test-account-db
+      - DATABASE_PORT=5432
+      - DATABASE_NAME=accounts
+      - DATABASE_USER=account_db_user
+      - DATABASE_PASSWORD=account_db_password
+    ports:
+      - "8881:8001"
+    depends_on:
+      test-account-db:
+        condition: service_healthy
+    networks:
+      - internal_test_network
+
+  test-order-db:
+    image: postgres:16
+    container_name: test-order-db
+    restart: always
+    command: >
+      -c wal_level=logical
+      -c max_wal_senders=1
+      -c max_replication_slots=3
+    environment:
+      - POSTGRES_USER=order_db_user
+      - POSTGRES_PASSWORD=order_db_password
+      - POSTGRES_DB=orders
+    volumes:
+      - ../../order/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "orders"]
+      interval: 10s
+      timeout: 60s
+      retries: 5
+      start_period: 60s
+    networks:
+      - internal_test_network 
+
+  test-account-db:
+    image: postgres:16
+    container_name: test-account-db
+    restart: always
+    command: >
+      -c wal_level=logical
+      -c max_wal_senders=1
+      -c max_replication_slots=3
+    environment:
+      - POSTGRES_USER=account_db_user
+      - POSTGRES_PASSWORD=account_db_password
+      - POSTGRES_DB=accounts
+    volumes:
+      - ../../account/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "accounts"]
+      interval: 10s
+      timeout: 60s
+      retries: 5
+      start_period: 60s
+    networks:
+      - internal_test_network 
+
+  test-kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: test-kafka
+    environment:
+      KAFKA_LISTENERS: "INTERNAL://0.0.0.0:29092,EXTERNAL://0.0.0.0:15456"
+      KAFKA_ADVERTISED_LISTENERS: "INTERNAL://test-kafka:29092,EXTERNAL://localhost:15456"
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      KAFKA_INTER_BROKER_LISTENER_NAME: "INTERNAL"
+      KAFKA_ZOOKEEPER_CONNECT: "test-zookeeper:2181"
+      KAFKA_BROKER_ID: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_JMX_HOSTNAME: "${DOCKER_HOST_IP:-127.0.0.1}"
+      KAFKA_AUTHORIZER_CLASS_NAME: "kafka.security.authorizer.AclAuthorizer"
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "true"
+    depends_on:
+      - test-zookeeper
+    healthcheck:
+      test: nc -z localhost 29092 || exit -1
+      start_period: 30s
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    networks:
+      - internal_test_network
+
+  test-connect:
+    image: confluentinc/cp-server-connect:7.6.0
+    container_name: test-kafka-connect
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: "test-kafka:29092"
+      CONNECT_GROUP_ID: "compose-group-id"
+      CONNECT_REST_ADVERTISED_HOST_NAME: "connect"
+      CONNECT_CONFIG_STORAGE_TOPIC: "connect-demo-configs"
+      CONNECT_OFFSET_STORAGE_TOPIC: "connect-demo-offsets"
+      CONNECT_STATUS_STORAGE_TOPIC: "connect-demo-statuses"
+      CONNECT_REPLICATION_FACTOR: 1
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: "org.apache.kafka.connect.storage.StringConverter"
+      CONNECT_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+      CONNECT_PLUGIN_PATH: "/usr/share/java,/usr/share/confluent-hub-components/,/connectors/"
+      ORDER_DATABASE_HOST: test-order-db # Конфигурация коннекторов БД
+      ORDER_DATABASE_PORT: 5432 
+      ORDER_DATABASE_NAME: orders
+      ORDER_DATABASE_USER: order_db_user
+      ORDER_DATABASE_PASSWORD: order_db_password
+      ACCOUNT_DATABASE_HOST: test-account-db
+      ACCOUNT_DATABASE_PORT: 5432 
+      ACCOUNT_DATABASE_NAME: accounts
+      ACCOUNT_DATABASE_USER: account_db_user
+      ACCOUNT_DATABASE_PASSWORD: account_db_password
+    depends_on:
+      test-kafka:
+        condition: service_healthy
+      test-account-db:
+        condition: service_healthy
+      test-order-db:
+        condition: service_healthy
+    volumes:
+      - ../../deploy/debezium:/scripts
+    healthcheck:
+      test: /scripts/healthcheck.sh || exit -1
+      start_period: 60s
+      interval: 5s
+      timeout: 10s
+      retries: 10
+    command:
+      - bash
+      - -c
+      - |
+        confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.2.1
+        /scripts/load_connector_config.sh &
+        /etc/confluent/docker/run
+    networks:
+      - internal_test_network
+
+  test-zookeeper:
+    container_name: test-zookeeper
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - internal_test_network
+
+networks:
+  internal_test_network:

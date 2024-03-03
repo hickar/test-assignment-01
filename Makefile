@@ -2,7 +2,7 @@ env ?= .env
 
 .PHONY: up-services
 up-services: ## Запуск всех сервисов через Docker Compose
-	docker compose --env-file $(env) up -d --wait
+	docker compose -f="docker-compose.yaml" --env-file="$(env)" up -d --wait
 
 .PHONY: down-services down-services-force
 down-services: ## Остановка 
@@ -18,8 +18,11 @@ lint-check: ## Запуск линтеров
 	golangci-lint run ./...
 
 .PHONY: test
-test: ## Запуск тестов 
-	go test -v ./...
+test: test-unit test-e2e ## Запуск всех тестов
+test-unit: ## Запуск unit-тестов
+	go test -v -tags="unit_test" ./...
+test-e2e: ## Запуск e2e-тестов
+	go test -v -tags="e2e_test" ./...
 
 .PHONY: proto-gen
 proto-gen: ## Генерация кода GRPC сервисов из .proto файлов 

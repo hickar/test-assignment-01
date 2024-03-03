@@ -61,7 +61,7 @@ func New(ctx context.Context, cfg Configuration) (*pgxpool.Pool, error) {
 
 	for r := 0; r < cfg.ConnectionRetries; r++ {
 		if err = dbpool.Ping(ctx); err == nil {
-			break
+			return dbpool, nil
 		}
 
 		time.Sleep(cfg.ConnectionRetryInterval)
